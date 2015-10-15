@@ -64,10 +64,12 @@ class ADF:
         Raises RuntimeError when wrong keyword is provided
         """
         for key in kwargs:
-            if key == "input":
+            if kwargs[key] is None:
+                continue
+            elif key == "input":
                 self.init_input = kwargs[key]
             elif key == "restart":
-                self.restart_file = kwargs[key]
+                self.restart_file = os.path.abspath(kwargs[key])
             elif key == "xyz":
                 self.xyz_file = kwargs[key]
             elif key == "workdir":
@@ -85,10 +87,16 @@ class ADF:
             self.workdir += "/"
 
     def set_positions(self, pos):
-        pass
+        if (abs(pos - self.atoms.get_positions()) > 1e-6).any():
+            self.atoms.set_positions(pos)
+            self.run()
 
     def set_atoms(self, atoms):
-        self.update(atoms)
+        if self.atoms is None or (len(atoms) != len(self.atoms)):
+            self.atoms = atoms.copy()
+            self.run()
+        else:
+            self.set_positions(atoms.get_positions())
 
     def initialize(self):
         self.read_input(self.init_input)
@@ -134,13 +142,19 @@ class ADF:
             else:
                 i += 1
 
-        self.input_lines[first_line:first_line] = [
+        init_cmds = [
             "TITLE ASE ADF job: {:s}\n".format(self.label),
-            "RESTART {:s} &\n".format(self.restart_file),
-            " noGEO\n",
-            "END\n",
             "GRADIENT\n"
             ]
+
+        if self.restart_file is not None:
+            init_cmds += [
+            "RESTART {:s} &\n".format(self.restart_file),
+            " noGEO\n",
+            "END\n"
+            ]
+
+        self.input_lines[first_line:first_line] = init_cmds
 
         self.input_lines += [
             "\n",
@@ -316,58 +330,57 @@ class ADF:
         if not self.running:
             self.run()
 
-        while not os.path.exists(self.workdir + "current/FINISHED"):
+        stdout_path = self.workdir + "current/{:s}.stdout".format(self.label)
+        t21_path = self.workdir + "current/TAPE21"
+
+        while not (os.path.exists(self.workdir + "current/FINISHED") and
+                   os.path.exists(stdout_path) and
+                   os.path.exists(t21_path)
+                   ):
             time.sleep(1)
 
         self.running = False
 
-        self.read_charges(self.workdir + "current/{:s}.stdout".format(self.label))
-        self.tape21 = kf.kffile(self.workdir + "current/TAPE21")
+        saved_stdout = self.workdir + str(self.iteration) + ".out"
+        if (os.path.exists(saved_stdout)):
+            os.remove(saved_stdout)
+        os.link(stdout_path, saved_stdout)
+
+        self.read_charges(stdout_path)
+        self.tape21 = kf.kffile(t21_path)
         self.energy = None
         self.forces = None
 
-    def positions_changed(self, atoms_new):
-        if self.atoms is None or (len(atoms_new) != len(self.atoms)):
-            return True
-
-        # check for change in atom position
-        if (abs(atoms_new.get_positions() - self.atoms.get_positions()) <= 1e-6).all():
-            return False
-
-        return True
-
-    def update(self, atoms_new):
-        if self.positions_changed(atoms_new):
-            self.atoms = atoms_new.copy()
-            self.run()
-
     def get_potential_energy(self, atoms=None):
         if atoms is not None:
-            self.update(atoms)
+            self.set_atoms(atoms)
         self.finish_run()
 
         if self.energy is None:
             self.energy = float(self.tape21.read("Energy", "Bond Energy")) * Hartree
+            saved_energy = open(self.workdir + str(self.iteration) + ".E", "w")
+            saved_energy.write("{:f}\n".format(self.energy))
+            saved_energy.close()
         return self.energy
 
     def from_internal_order(self, a):
         if self.atom_order_index is None:
             self.atom_order_index = list()
             index_tmp = self.tape21.read("Geometry", "atom order index")
-            for i in xrange(0, len(index_tmp) / 2):
+            for i in xrange(1, len(index_tmp) / 2 + 1):
                 if i in self.active_atoms:
-                    self.atom_order_index.append(index_tmp[i] - 1)
+                    self.atom_order_index.append(index_tmp[i - 1] - 1)
 
         return a.take(self.atom_order_index, 0)
 
     def get_forces(self, atoms=None):
         if atoms is not None:
-            self.update(atoms)
+            self.set_atoms(atoms)
         self.finish_run()
 
         if self.forces is None:
             grad_internal = self.tape21.read("GeoOpt", "Gradients_CART").reshape((-1, 3))
-            self.forces = -self.from_internal_order(grad_internal) * Hartree / ( Bohr * Bohr)
+            self.forces = -self.from_internal_order(grad_internal) * Hartree / Bohr
 
         return self.forces
 
