@@ -110,13 +110,29 @@ class NEB:
         for i in range(1, self.nimages - 1):
             tangent2 = (images[i + 1].get_positions() -
                         images[i].get_positions())
-            if i < imax:
+
+            e = energies[i - 1]
+            if i == 1:
+                e1 = e
+            else:
+                e1 = energies[i - 2]
+            if i == self.nimages - 2:
+                e2 = e
+            else:
+                e2 = energies[i]
+
+            if e2 > e and e > e1:
                 tangent = tangent2
-            elif i > imax:
+            elif e2 < e and e < e1:
                 tangent = tangent1
             else:
-                tangent = tangent1 + tangent2
-                
+                demax = max(abs(e2 - e), abs(e1 - e))
+                demin = max(abs(e2 - e), abs(e1 - e))
+                if e2 > e1:
+                    tangent = demin * tangent1 + demax * tangent2
+                else:
+                    tangent = demax * tangent1 + demin * tangent2
+
             tt = np.vdot(tangent, tangent)
             f = forces[i - 1]
             ft = np.vdot(f, tangent)
