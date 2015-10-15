@@ -43,6 +43,7 @@ class ADF:
         self.forces = None
         self.atom_order_index = None
         self.iteration = 0
+        self.explicit_caps = False
 
         # set user values
         self.set(**kwargs)
@@ -78,6 +79,8 @@ class ADF:
                 self.active_atoms = set(kwargs[key])
             elif key == "command":
                 self.command = kwargs[key]
+            elif key == "explicit_caps":
+                self.explicit_caps = kwargs[key]
             else:
                 raise RuntimeError('ADF calculator: unknown keyword: ' + key)
 
@@ -261,12 +264,16 @@ class ADF:
             m = re.match("^ *Added capping atom *([0-9]+) charge *(-*[0-9\.]+) to atom *([0-9]+) with new value *(-*[0-9\.]+)", line)
             if m:
                 icap = int(m.group(1))
+                qcap = float(m.group(2))
                 ireal = int(m.group(3))
                 qreal = float(m.group(4))
 
-                if icap in self.charges:
-                    del self.charges[icap]
-                self.charges[ireal] = qreal
+                if self.explicit_caps:
+                    self.charges[icap] = qcap
+                else:
+                    if icap in self.charges:
+                        del self.charges[icap]
+                    self.charges[ireal] = qreal
 
     def update_charges(self):
         if self.charges is None:
