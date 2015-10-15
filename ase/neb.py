@@ -9,7 +9,7 @@ from ase.io import read
 
 class NEB:
     def __init__(self, images, k=0.1, climb=False, parallel=False,
-                 world=None):
+                 world=None, eref=None, deltak=0.0):
         """Nudged elastic band.
 
         images: list of Atoms objects
@@ -27,6 +27,9 @@ class NEB:
         self.natoms = len(images[0])
         self.nimages = len(images)
         self.emax = np.nan
+        self.eref = eref
+        self.deltak = deltak
+        self.kmax = k
 
         if isinstance(k, (float, int)):
             k = [k] * (self.nimages - 1)
@@ -105,6 +108,21 @@ class NEB:
 
         imax = 1 + np.argsort(energies)[-1]
         self.emax = energies[imax - 1]
+
+        if self.eref is not None:
+            for i in xrange(0, self.nimages - 1):
+                if i == 0:
+                    ei = energies[0]
+                elif i == self.nimages - 2:
+                    ei = energies[i - 1]
+                else:
+                    ei = max(energies[i - 1], energies[i])
+
+                if ei > self.eref:
+                    self.k[i] = self.kmax - self.deltak * ((self.emax - ei) / (self.emax - self.eref))
+                else:
+                    self.k[i] = self.kmax - self.deltak
+
         
         tangent1 = images[1].get_positions() - images[0].get_positions()
         for i in range(1, self.nimages - 1):
