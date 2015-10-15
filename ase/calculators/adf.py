@@ -215,7 +215,6 @@ class ADF:
         self.input_lines[start_line:end_line] = atom_lines
 
         ase.io.write(self.workdir + str(self.iteration) + ".xyz", xyz_atoms)
-        self.iteration += 1
 
     def read_input_charges(self):
         self.charges = None
@@ -291,6 +290,7 @@ class ADF:
         self.input_lines[start_line:end_line] = charge_lines
 
     def run(self):
+        self.iteration += 1
         self.prepare_workdir()
         if not self.first_run:
             self.xyz_file = self.workdir + "prev/current.xyz"
