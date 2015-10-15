@@ -1,4 +1,5 @@
-from math import sqrt
+import math
+from math import sqrt, cos
 
 import numpy as np
 
@@ -9,7 +10,7 @@ from ase.io import read
 
 class NEB:
     def __init__(self, images, k=0.1, climb=False, parallel=False,
-                 world=None, eref=None, deltak=0.0):
+                 world=None, eref=None, deltak=0.0, perpspring=False):
         """Nudged elastic band.
 
         images: list of Atoms objects
@@ -30,6 +31,7 @@ class NEB:
         self.eref = eref
         self.deltak = deltak
         self.kmax = k
+        self.perpspring = perpspring
 
         if isinstance(k, (float, int)):
             k = [k] * (self.nimages - 1)
@@ -158,8 +160,18 @@ class NEB:
                 f -= 2 * ft / tt * tangent
             else:
                 f -= ft / tt * tangent
-                f -= np.vdot(tangent1 * self.k[i - 1] -
-                             tangent2 * self.k[i], tangent) / tt * tangent
+                fs = tangent2 * self.k[i] - tangent1 * self.k[i - 1]
+                fspara = np.vdot(fs, tangent) / tt * tangent
+                f += fspara
+                if self.perpspring:
+                    cosphi = np.vdot(tangent1, tangent2) / (
+                        np.linalg.norm(tangent1) * np.linalg.norm(tangent2))
+                    if cosphi > 0:
+                        sfac = (1 + cos(math.pi * cosphi)) / 2
+                    else:
+                        sfac = 1
+
+                    f += sfac * (fs - fspara)
                 
             tangent1 = tangent2
 
